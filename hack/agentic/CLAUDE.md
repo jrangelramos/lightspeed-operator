@@ -13,8 +13,9 @@ KUBECONFIG=/path/to/kubeconfig bash hack/agentic/deploy.sh --provider=vertex --s
 KUBECONFIG=/path/to/kubeconfig bash hack/agentic/deploy.sh --provider=vertex --with-demo
 ```
 
-Deploys: CRDs, namespace, builds (agent + skills in parallel, then console,
-then operator), LLMProvider, Agent tiers, ApprovalPolicy, SandboxTemplate.
+Deploys: CRDs, namespace, builds (agent + skills in parallel, then console +
+cluster-update console, then operator), LLMProvider, Agent tiers,
+ApprovalPolicy, SandboxTemplate.
 
 Required env vars for Vertex: `VERTEX_PROJECT`. For Bedrock: `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY` (or aws cli config).
@@ -22,11 +23,12 @@ Required env vars for Vertex: `VERTEX_PROJECT`. For Bedrock: `AWS_ACCESS_KEY_ID`
 ## Fast iteration (redeploy single component)
 
 ```bash
-KUBECONFIG=... bash hack/agentic/redeploy-operator.sh     # operator only
-KUBECONFIG=... bash hack/agentic/redeploy-agent.sh        # agent sandbox + skills
-KUBECONFIG=... bash hack/agentic/redeploy-console.sh      # console plugin only
-KUBECONFIG=... bash hack/agentic/redeploy-skills.sh       # skills image only
-KUBECONFIG=... bash hack/agentic/redeploy-all.sh          # everything (parallel)
+KUBECONFIG=... bash hack/agentic/redeploy-operator.sh              # operator only
+KUBECONFIG=... bash hack/agentic/redeploy-agent.sh                # agent sandbox + skills
+KUBECONFIG=... bash hack/agentic/redeploy-console.sh              # console plugin only
+KUBECONFIG=... bash hack/agentic/redeploy-cluster-update-console.sh  # cluster-update console only
+KUBECONFIG=... bash hack/agentic/redeploy-skills.sh               # skills image only
+KUBECONFIG=... bash hack/agentic/redeploy-all.sh                  # everything (parallel)
 ```
 
 All scripts accept `--skip-build` to skip the image build and just rollout.
@@ -46,7 +48,7 @@ KUBECONFIG=... VERTEX_PROJECT=... bash hack/agentic/undeploy.sh  # also cleans G
 - Each component has a BuildConfig + ImageStream in `openshift-lightspeed`.
 - Images are tagged as `wt-<name>` in worktrees, `latest` in main repo.
   Multiple worktrees can deploy to the same cluster without clobbering.
-- 4 images total: operator, agent sandbox, console plugin, skills.
+- 5 images total: operator, agent sandbox, console plugin, cluster-update console plugin, skills.
 - Skills is a single OCI image with all skills. Per-proposal skill selection
   uses `SkillsSource.paths` in the Proposal CRD (no per-profile images needed).
 - The operator build constructs a minimal context with just
@@ -68,6 +70,7 @@ Override any dev image via env vars to use external images (e.g. Konflux):
 |---|---|---|
 | `OPERATOR_IMG` | `image-registry.../lightspeed-operator:<tag>` | Operator binary |
 | `CONSOLE_IMG` | `image-registry.../lightspeed-console-plugin:<tag>` | Agentic console plugin |
+| `CLUSTER_UPDATE_IMG` | `image-registry.../cluster-update-console-plugin:<tag>` | Cluster-update console plugin |
 | `AGENT_IMG` | `image-registry.../lightspeed-agentic-sandbox:<tag>` | Agent sandbox |
 | `SKILLS_IMG` | `image-registry.../agentic-skills:<tag>` | Skills OCI image |
 
@@ -103,6 +106,7 @@ overridden via environment variables:
 | `AGENTIC_OPERATOR_DIR` | `../lightspeed-agentic-operator` | Operator build (Go types) |
 | `AGENT_DIR` | `../lightspeed-agentic-sandbox` | Agent sandbox build |
 | `CONSOLE_DIR` | `../lightspeed-agentic-console` | Console plugin build |
+| `CLUSTER_UPDATE_DIR` | `../cluster-update-console-plugin` | Cluster-update console build |
 | `SKILLS_DIR` | `../agentic-skills` | Skills image build |
 
 ## Components
@@ -112,4 +116,5 @@ overridden via environment variables:
 | Operator | `lightspeed-operator` | `lightspeed-operator/` + `lightspeed-agentic-operator/` (minimal) | `lightspeed-operator/Dockerfile.dev` |
 | Agent sandbox | `lightspeed-agentic-sandbox` | `lightspeed-agentic-sandbox/` | `Containerfile.dev` |
 | Console plugin | `lightspeed-console-plugin` | `lightspeed-agentic-console/` | `Dockerfile` |
+| Cluster-update console | `cluster-update-console-plugin` | `cluster-update-console-plugin/` | `Dockerfile` |
 | Skills | `agentic-skills` | `agentic-skills/` | `Containerfile` |

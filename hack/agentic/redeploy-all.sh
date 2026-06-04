@@ -29,6 +29,10 @@ start_operator_build_async
     && start_build_async "${BC_CONSOLE}" "${CONSOLE_DIR}" "console plugin" \
     || warn "Console directory not found, skipping: ${CONSOLE_DIR}"
 
+[[ -d "${CLUSTER_UPDATE_DIR}" ]] \
+    && start_build_async "${BC_CLUSTER_UPDATE}" "${CLUSTER_UPDATE_DIR}" "cluster-update console" \
+    || warn "Cluster-update console directory not found, skipping: ${CLUSTER_UPDATE_DIR}"
+
 wait_all_builds
 
 update_crds_and_rbac
@@ -47,6 +51,10 @@ if oc get "deployment/${DEPLOY_CONSOLE}" -n "${NS_CONSOLE}" >/dev/null 2>&1; the
     patch_console_image
     rollout "${DEPLOY_CONSOLE}" "${NS_CONSOLE}" "Console plugin"
 fi
+if oc get "deployment/${DEPLOY_CLUSTER_UPDATE}" -n "${NS_OPERATOR}" >/dev/null 2>&1; then
+    patch_cluster_update_image
+    rollout "${DEPLOY_CLUSTER_UPDATE}" "${NS_OPERATOR}" "Cluster-update console"
+fi
 resume_operator
 
 ###############################################################################
@@ -56,6 +64,9 @@ step "Deployed digests"
 show_digest "${DEPLOY_OPERATOR}" "${NS_OPERATOR}" "Operator"
 if oc get "deployment/${DEPLOY_CONSOLE}" -n "${NS_CONSOLE}" >/dev/null 2>&1; then
     show_digest "${DEPLOY_CONSOLE}" "${NS_CONSOLE}" "Console"
+fi
+if oc get "deployment/${DEPLOY_CLUSTER_UPDATE}" -n "${NS_OPERATOR}" >/dev/null 2>&1; then
+    show_digest "${DEPLOY_CLUSTER_UPDATE}" "${NS_OPERATOR}" "Cluster-update console"
 fi
 
 echo -e "\n${GREEN}All agentic components redeployed.${NC}"

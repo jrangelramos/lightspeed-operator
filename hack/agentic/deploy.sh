@@ -7,6 +7,7 @@
 #   - Agent sandbox (lightspeed-agent pod via SandboxTemplate)
 #   - Skills OCI image
 #   - Console plugin (lightspeed-agentic-console)
+#   - Cluster-update console plugin (cluster-update-console-plugin)
 #   - Proposal API chain (LLMProvider → Agent → ApprovalPolicy)
 #
 # Usage:
@@ -73,6 +74,7 @@ step "Building images (agent + skills parallel, then console)"
 wait_all_builds
 
 [[ -d "${CONSOLE_DIR}" ]] && build_on_cluster "${BC_CONSOLE}" "${CONSOLE_DIR}" "console plugin"
+[[ -d "${CLUSTER_UPDATE_DIR}" ]] && build_on_cluster "${BC_CLUSTER_UPDATE}" "${CLUSTER_UPDATE_DIR}" "cluster-update console plugin"
 
 if [[ -d "${CONSOLE_DIR}" ]]; then
     oc policy add-role-to-user system:image-puller \
@@ -87,6 +89,8 @@ build_push_operator
 install_agent_sandbox_controller
 ensure_agent_rbac
 ensure_agent_service
+
+[[ -d "${CLUSTER_UPDATE_DIR}" ]] && deploy_cluster_update_plugin
 
 ###############################################################################
 # Day 0, Step 1 — LLM credentials + LLMProvider CRs (Cluster Admin)

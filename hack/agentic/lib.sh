@@ -31,6 +31,7 @@ OPERATOR_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(dirname "${OPERATOR_DIR}")"
 
 CONSOLE_DIR="${CONSOLE_DIR:-${WORKSPACE_ROOT}/lightspeed-agentic-console}"
+CLUSTER_UPDATE_DIR="${CLUSTER_UPDATE_DIR:-${WORKSPACE_ROOT}/cluster-update-console-plugin}"
 SKILLS_DIR="${SKILLS_DIR:-${WORKSPACE_ROOT}/agentic-skills}"
 AGENT_DIR="${AGENT_DIR:-${WORKSPACE_ROOT}/lightspeed-agentic-sandbox}"
 AGENTIC_OPERATOR_DIR="${AGENTIC_OPERATOR_DIR:-${WORKSPACE_ROOT}/lightspeed-agentic-operator}"
@@ -42,6 +43,7 @@ NS_CONSOLE="openshift-lightspeed"
 # Deployment names (match operator constants.go)
 DEPLOY_OPERATOR="lightspeed-operator-controller-manager"
 DEPLOY_CONSOLE="lightspeed-agentic-console-plugin"
+DEPLOY_CLUSTER_UPDATE="cluster-update-console-plugin"
 
 # Image tag — unique per worktree so concurrent deploys don't clobber each other.
 # .worktrees/<name>/ → "wt-<name>", main repo → "latest".
@@ -54,6 +56,7 @@ fi
 # BuildConfig names — match ImageStream names in ensure_buildconfigs()
 BC_OPERATOR="lightspeed-operator"
 BC_CONSOLE="lightspeed-console-plugin"
+BC_CLUSTER_UPDATE="cluster-update-console-plugin"
 BC_AGENT="lightspeed-agentic-sandbox"
 BC_SKILLS="agentic-skills"
 
@@ -69,10 +72,12 @@ INTERNAL_REG="image-registry.openshift-image-registry.svc:5000"
 _IMG_OVERRIDES=()
 [[ -n "${OPERATOR_IMG:-}" ]] && _IMG_OVERRIDES+=("${BC_OPERATOR}")
 [[ -n "${CONSOLE_IMG:-}" ]] && _IMG_OVERRIDES+=("${BC_CONSOLE}")
+[[ -n "${CLUSTER_UPDATE_IMG:-}" ]] && _IMG_OVERRIDES+=("${BC_CLUSTER_UPDATE}")
 [[ -n "${AGENT_IMG:-}" ]] && _IMG_OVERRIDES+=("${BC_AGENT}")
 [[ -n "${SKILLS_IMG:-}" ]] && _IMG_OVERRIDES+=("${BC_SKILLS}")
 OPERATOR_IMG="${OPERATOR_IMG:-${INTERNAL_REG}/${NS_OPERATOR}/${BC_OPERATOR}:${TAG}}"
 CONSOLE_IMG="${CONSOLE_IMG:-${INTERNAL_REG}/${NS_OPERATOR}/${BC_CONSOLE}:${TAG}}"
+CLUSTER_UPDATE_IMG="${CLUSTER_UPDATE_IMG:-${INTERNAL_REG}/${NS_OPERATOR}/${BC_CLUSTER_UPDATE}:${TAG}}"
 AGENT_IMG="${AGENT_IMG:-${INTERNAL_REG}/${NS_OPERATOR}/${BC_AGENT}:${TAG}}"
 SKILLS_IMG="${SKILLS_IMG:-${INTERNAL_REG}/${NS_OPERATOR}/${BC_SKILLS}:${TAG}}"
 
@@ -133,6 +138,12 @@ apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
   name: lightspeed-agentic-sandbox
+  namespace: ${NS_OPERATOR}
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: cluster-update-console-plugin
   namespace: ${NS_OPERATOR}
 ---
 apiVersion: image.openshift.io/v1
@@ -209,6 +220,29 @@ spec:
       memory: 4Gi
     limits:
       memory: 8Gi
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: cluster-update-console-plugin
+  namespace: ${NS_OPERATOR}
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: "cluster-update-console-plugin:${TAG}"
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
 ---
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
@@ -360,6 +394,158 @@ resume_operator() {
 patch_console_image() {
     _run oc set image "deployment/${DEPLOY_CONSOLE}" -n "${NS_CONSOLE}" \
         "*=${CONSOLE_IMG}"
+}
+
+# Patch cluster-update console plugin deployment image
+patch_cluster_update_image() {
+    _run oc set image "deployment/${DEPLOY_CLUSTER_UPDATE}" -n "${NS_OPERATOR}" \
+        "*=${CLUSTER_UPDATE_IMG}"
+}
+
+# Deploy cluster-update-console-plugin (not managed by the operator — standalone manifests)
+deploy_cluster_update_plugin() {
+    step "Deploying cluster-update console plugin"
+    cat <<CUEOF | oc apply -f - >/dev/null 2>&1
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-update-console-plugin
+  namespace: ${NS_OPERATOR}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-update-console-plugin
+  namespace: ${NS_OPERATOR}
+data:
+  nginx.conf: |
+    error_log /dev/stdout info;
+    events {}
+    http {
+      access_log         /dev/stdout;
+      include            /etc/nginx/mime.types;
+      default_type       application/octet-stream;
+      keepalive_timeout  65;
+      server {
+        listen              9443 ssl;
+        listen              [::]:9443 ssl;
+        ssl_certificate     /var/cert/tls.crt;
+        ssl_certificate_key /var/cert/tls.key;
+        root                /usr/share/nginx/html;
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-update-console-plugin
+  namespace: ${NS_OPERATOR}
+  annotations:
+    service.alpha.openshift.io/serving-cert-secret-name: cluster-update-console-plugin-cert
+spec:
+  selector:
+    app: cluster-update-console-plugin
+  ports:
+    - name: 9443-tcp
+      protocol: TCP
+      port: 9443
+      targetPort: 9443
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-update-console-plugin
+  namespace: ${NS_OPERATOR}
+  labels:
+    app: cluster-update-console-plugin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-update-console-plugin
+  template:
+    metadata:
+      labels:
+        app: cluster-update-console-plugin
+    spec:
+      serviceAccountName: cluster-update-console-plugin
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cluster-update-console-plugin
+          image: ${CLUSTER_UPDATE_IMG}
+          ports:
+            - containerPort: 9443
+              protocol: TCP
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          volumeMounts:
+            - name: cluster-update-console-plugin-cert
+              readOnly: true
+              mountPath: /var/cert
+            - name: nginx-conf
+              readOnly: true
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+      volumes:
+        - name: cluster-update-console-plugin-cert
+          secret:
+            secretName: cluster-update-console-plugin-cert
+            defaultMode: 420
+        - name: nginx-conf
+          configMap:
+            name: cluster-update-console-plugin
+            defaultMode: 420
+---
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: cluster-update-console-plugin
+spec:
+  displayName: Cluster Update Console Plugin
+  i18n:
+    loadType: Preload
+  backend:
+    type: Service
+    service:
+      name: cluster-update-console-plugin
+      namespace: ${NS_OPERATOR}
+      port: 9443
+      basePath: /
+CUEOF
+    info "Cluster-update console plugin manifests applied"
+
+    # Enable the plugin in the Console operator (idempotent)
+    local current_plugins
+    current_plugins=$(oc get consoles.operator.openshift.io cluster -o jsonpath='{.spec.plugins}' 2>/dev/null || echo "")
+    if ! echo "${current_plugins}" | grep -q "cluster-update-console-plugin"; then
+        oc patch consoles.operator.openshift.io cluster --type=json \
+            -p '[{"op":"add","path":"/spec/plugins/-","value":"cluster-update-console-plugin"}]' >/dev/null 2>&1 \
+            || oc patch consoles.operator.openshift.io cluster --type=merge \
+                -p '{"spec":{"plugins":["cluster-update-console-plugin"]}}' >/dev/null 2>&1
+        info "Cluster-update plugin enabled in console"
+    else
+        info "Cluster-update plugin already enabled in console"
+    fi
+
+    # Wait for TLS cert
+    oc wait --for=create secret/cluster-update-console-plugin-cert -n "${NS_OPERATOR}" --timeout=60s >/dev/null 2>&1 || true
+
+    # Grant image-puller for the SA
+    oc policy add-role-to-user system:image-puller \
+        system:serviceaccount:${NS_OPERATOR}:cluster-update-console-plugin \
+        -n "${NS_OPERATOR}" >/dev/null 2>&1
 }
 
 # Print the running image digest for a deployment
