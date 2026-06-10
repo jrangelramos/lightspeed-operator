@@ -21,8 +21,9 @@
 #   LLM_PROVIDER        - Alternative to --provider flag (vertex|bedrock).
 #
 #   Vertex AI:
-#     VERTEX_PROJECT    - Required. GCP project with Vertex AI enabled.
-#     VERTEX_REGION     - GCP region (default: global).
+#     VERTEX_PROJECT        - Required. GCP project with Vertex AI enabled.
+#     VERTEX_REGION         - GCP region (default: global).
+#     VERTEX_MODEL_PROVIDER - Model provider for Vertex AI (default: Anthropic).
 #     GOOGLE_APPLICATION_CREDENTIALS - Path to GCP credentials JSON (default: ~/.config/gcloud/application_default_credentials.json).
 #
 #   AWS Bedrock:
@@ -100,6 +101,7 @@ LLM_SECRET="llm-credentials"
 if [[ "${LLM_PROVIDER}" == "vertex" ]]; then
     step "Ensuring LLM credentials (Vertex AI)"
     VERTEX_REGION="${VERTEX_REGION:-global}"
+    VERTEX_MODEL_PROVIDER="${VERTEX_MODEL_PROVIDER:-Anthropic}"
 
     if ! oc get secret "${LLM_SECRET}" -n "${NS_OPERATOR}" >/dev/null 2>&1; then
         GCP_CREDS_FILE=$(vertex_credentials_file)
@@ -227,6 +229,7 @@ spec:
       name: ${LLM_SECRET}
     projectID: ${VERTEX_PROJECT}
     region: ${VERTEX_REGION}
+    modelProvider: ${VERTEX_MODEL_PROVIDER}
 LLMEOF
         info "LLMProvider CR created (vertex-ai via GoogleCloudVertex)"
 
