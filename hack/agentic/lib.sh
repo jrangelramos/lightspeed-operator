@@ -568,6 +568,10 @@ update_crds_and_rbac() {
     cd "${OPERATOR_DIR}"
     _run make manifests kustomize
     _run oc apply -f config/crd/bases/
+    if [[ -d "${AGENTIC_OPERATOR_DIR}/config/crd/bases/" ]]; then
+        _run oc apply -f "${AGENTIC_OPERATOR_DIR}/config/crd/bases/"
+        info "Agentic-operator CRDs updated"
+    fi
     bin/kustomize build config/default \
         | oc apply -f - -l app.kubernetes.io/component=rbac --server-side --force-conflicts >/dev/null 2>&1 \
         || warn "RBAC update via kustomize failed — may need full deploy"
@@ -579,6 +583,10 @@ install_crds() {
     cd "${OPERATOR_DIR}"
     _run make manifests kustomize
     bin/kustomize build config/crd | _run oc apply -f -
+    if [[ -d "${AGENTIC_OPERATOR_DIR}/config/crd/bases/" ]]; then
+        _run oc apply -f "${AGENTIC_OPERATOR_DIR}/config/crd/bases/"
+        info "Agentic-operator CRDs installed"
+    fi
     info "CRDs installed"
     oc get crd olsconfigs.ols.openshift.io --no-headers 2>/dev/null | awk '{print "    " $1}' || true
     oc get crd proposals.agentic.openshift.io --no-headers 2>/dev/null | awk '{print "    " $1}' || true
