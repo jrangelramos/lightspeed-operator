@@ -107,7 +107,7 @@ if [[ "${LLM_PROVIDER}" == "vertex" ]]; then
         GCP_CREDS_FILE=$(vertex_credentials_file)
 
         oc create secret generic "${LLM_SECRET}" -n "${NS_OPERATOR}" \
-            --from-file=credentials.json="${GCP_CREDS_FILE}" \
+            --from-file=GOOGLE_APPLICATION_CREDENTIALS="${GCP_CREDS_FILE}" \
             --from-literal=ANTHROPIC_VERTEX_PROJECT_ID="${VERTEX_PROJECT}" \
             --from-literal=CLOUD_ML_REGION="${VERTEX_REGION}" >/dev/null 2>&1
         info "LLM credentials created (ADC, project=${VERTEX_PROJECT}, region=${VERTEX_REGION})"
